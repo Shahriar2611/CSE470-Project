@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 #cd C:\Users\ayon4\470\CSE470-Project
 #python -m uvicorn main:app --reload
+#git clone https://github.com/Shahriar2611/CSE470-Project
 
 
 app = FastAPI()
@@ -23,10 +24,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Serve HTML pages
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    with open("templates/index.html", "r") as file:
-        html_content = file.read()
-    return HTMLResponse(content=html_content, status_code=200)
+async def index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/register", response_class=HTMLResponse)
 async def register(request: Request):
@@ -55,7 +54,7 @@ async def register_user(user: User):
     if user_exists:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
     
-    user_dict = user.dict()
+    user_dict = user.model_dump()
     user_dict["password"] = user.password  # In a real application, you would hash the password
     user_id = users_collection.insert_one(user_dict).inserted_id
     return {"message": "User registered successfully", "user_id": str(user_id)}
