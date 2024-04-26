@@ -88,28 +88,18 @@ async def register_user(request: Request, username: str = Form(...), email: str 
 @app.post("/login")
 async def login_user(request: Request, response: Response, username: str = Form(...), password: str = Form(...)):
     user = authenticate_user(username, password)
+    print(user,username)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     # Create session token
     session_token = create_session_token(username)
     response.set_cookie(key=COOKIE_NAME, value=session_token, httponly=True, max_age=SESSION_EXPIRE_MINUTES * 60)
     return RedirectResponse(url="/dashboard")
 
 def authenticate_user(username: str, password: str):
-    # Dummy user data (replace with database lookup)
-    fake_users_db = {
-        "user1": {
-            "username": "user1",
-            "hashed_password": "$2b$12$AqIkz4Ne1T/2OiDl5cSEPe/.wuSUW4R/nThLs2aMg1KT58VlUQZ0m"  # Hashed password: password123
-        },
-        "user2": {
-            "username": "user2",
-            "hashed_password": "$2b$12$1F/vpswPrrbJWVwUPlA38ORXsbVXYcmIKrWcBQeBoPKqTKCXDaKsG"  # Hashed password: secret456
-        }
-    }
-    if username in fake_users_db:
-        user = fake_users_db[username]
-        if pwd_context.verify(password, user["hashed_password"]):
+    user = users_collection.find_one({"email": username})
+    if user:
+        if pwd_context.verify(password, user["password"]):
             return user
     return None
 
