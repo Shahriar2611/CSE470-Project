@@ -1,118 +1,87 @@
-from fastapi import FastAPI, HTTPException, Request, Form, Cookie, Response, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from pymongo import MongoClient
-from bson.objectid import ObjectId
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from passlib.hash import bcrypt
-from passlib.context import CryptContext
-from datetime import datetime, timedelta
-
-#cd C:\Users\ayon4\470\CSE470-Project
-#python -m uvicorn main:app --reload
-#git clone https://github.com/Shahriar2611/CSE470-Project
-
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pymongo import MongoClient
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-client = MongoClient("mongodb://mongo:27017/")
-db = client["user_db"]
+client = MongoClient("mongodb://localhost:27017/")
+db = client["fitness_tracker"]
 users_collection = db["users"]
+exercises_collection = db["exercises"]
+diets_collection = db["diets"]
 
-SECRET_KEY = "8d42ac633c2be72c96206ff593faa101d04e0d3c2086341d065a3de2a90513d1"
-COOKIE_NAME = "session_token"
-SESSION_EXPIRE_MINUTES = 30
+security = HTTPBasic()
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Check if user is authenticated
+def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
+    user = authenticate_user(credentials.username, credentials.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return user["username"]
 
-@app.get("/")
-async def root():
-    return RedirectResponse("/login")
+# Authentication function
+def authenticate_user(username: str, password: str):
+    user = users_collection.find_one({"username": username, "password": password})
+    return user
 
-# Route handler for the root path "/"
-@app.get("/")
-async def root():
-    return {"message": "Welcome to the API!"}
+# Homepage
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
-# Route handler for the favicon.ico request
 @app.get("/favicon.ico")
 async def favicon():
     return {"message": "Favicon not found"}
 
 @app.get("/register", response_class=HTMLResponse)
 async def register(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request})
+    return templates.TemplateResponse("registration.html", {"request": request})
 
 @app.get("/login", response_class=HTMLResponse)
 async def login(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
-@app.get("/about", response_class=HTMLResponse)
-async def about(request: Request):
-    return templates.TemplateResponse("about.html", {"request": request})
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, session_token: str = Cookie(None)):
-    if not is_authenticated(session_token):
-        return RedirectResponse(url="/login")
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+# User login
+@app.post("/login")
+async def login(credentials: HTTPBasicCredentials = Depends(security)):
+    user = authenticate_user(credentials.username, credentials.password)
+    if user:
+        return RedirectResponse(url="/dashboard")
+    else:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
 
-security = HTTPBasic()
-
-class User(BaseModel):
-    firstName: str
-    lastName: str
-    birthdate: str
-    email: str
-    password: str
-
+# User registration
 @app.post("/register")
-async def register_user(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
-    # Check if username or email already exists
-    if users_collection.find_one({"$or": [{"username": username}, {"email": email}]}):
-        raise HTTPException(status_code=400, detail="Username or email already registered")
-    
-    # Hash password
-    hashed_password = bcrypt.hash(password)
-
-    # Insert user into database
-    user_data = {"username": username, "email": email, "password": hashed_password}
-    users_collection.insert_one(user_data)
-
+async def register(username: str, email: str, password: str):
+    existing_user = users_collection.find_one({"username": username})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    new_user = {"username": username, "email": email, "password": password}
+    users_collection.insert_one(new_user)
     return {"message": "Registration successful"}
 
-@app.post("/login")
-async def login_user(request: Request, response: Response, username: str = Form(...), password: str = Form(...)):
-    user = authenticate_user(username, password)
-    print(user,username)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    # Create session token
-    session_token = create_session_token(username)
-    response.set_cookie(key=COOKIE_NAME, value=session_token, httponly=True, max_age=SESSION_EXPIRE_MINUTES * 60)
-    return RedirectResponse(url="/dashboard")
+# Dashboard endpoint
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
-def authenticate_user(username: str, password: str):
-    user = users_collection.find_one({"email": username})
-    if user:
-        if pwd_context.verify(password, user["password"]):
-            return user
-    return None
+# Workout endpoint
+@app.get("/workout/", response_class=HTMLResponse)
+async def workout(goal: str, request: Request):
+    # Fetch exercises based on goal from MongoDB
+    exercises = exercises_collection.find({"goal": goal})
+    return templates.TemplateResponse("workout.html", {"request": request, "exercises": exercises})
 
-def create_session_token(username: str):
-    expiration_datetime = datetime.utcnow() + timedelta(minutes=SESSION_EXPIRE_MINUTES)
-    data = {"sub": username, "exp": expiration_datetime}
-    return data["sub"]
-
-def is_authenticated(session_token: str):
-    return session_token is not None
+# Diet endpoint
+@app.get("/diet/", response_class=HTMLResponse)
+async def diet(goal: str, request: Request):
+    # Fetch diet plans based on goal from MongoDB
+    diets = diets_collection.find({"goal": goal})
+    return templates.TemplateResponse("diet.html", {"request": request, "diets": diets})
 
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
