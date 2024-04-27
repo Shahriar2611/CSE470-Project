@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pymongo import MongoClient
+from pydantic import BaseModel
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -14,6 +15,20 @@ exercises_collection = db["exercises"]
 diets_collection = db["diets"]
 
 security = HTTPBasic()
+
+# Models
+class User(BaseModel):
+    username: str
+    email: str
+    password: str
+
+class Exercise(BaseModel):
+    name: str
+    category: str
+
+class Diet(BaseModel):
+    name: str
+    category: str
 
 # Check if user is authenticated
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
